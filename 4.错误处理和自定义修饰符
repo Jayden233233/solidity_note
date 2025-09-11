@@ -1,0 +1,149 @@
+###  🔍 三者对比
+
+| 特性        | `require`           | `revert`                    | `assert`              |
+| --------- | ------------------- | --------------------------- | --------------------- |
+| ✅ 功能      | 条件检查，不满足则终止执行       | 手动触发终止执行，带/不带错误信息           | 检查程序内部逻辑是否**永远成立**    |
+| 🎯 用途     | 验证输入、权限、调用状态        | 更灵活地中止执行                    | 用来发现**bug**或**不变量失效** |
+| 🔄 状态回滚   | ✅ 会回滚               | ✅ 会回滚                       | ✅ 会回滚                 |
+| 💸 Gas 返还 | ✅ 未消耗的 gas 会返还      | ✅ 会返还                       | ❌ 不返还（panic，重大错误）     |
+| 📢 可带信息   | ✅ `"错误信息"`          | ✅ `"错误信息"` 或 `error Type()` | ❌ 无信息（只有 Panic code）  |
+| 🧱 推荐使用   | 外部输入条件、require权限检查等 | 业务逻辑失败、自定义 error 抛错         | 测试 / 内部断言，**永远不该失败**  |
+
+---
+
+#### 5. try-catch 语句
+
+Solidity 从 0.6.0 版本开始引入了 `try-catch` 语句，用于处理外部函数调用和合约创建中的错误。这是 Solidity 中错误处理的重要机制之一。
+
+##### 🚨适用场景
+
+`try-catch` 只能用于以下两种情况：
+
+1. **外部函数调用**（使用 `address` 调用或合约实例调用）
+    
+2. **合约创建**（使用 `new` 关键字）
+
+#### 完整的 try-catch 结构
+
+```solidity
+try externalContract.someFunction(arg1, arg2) returns (uint256 result) {
+    // 调用成功时执行的代码
+    // 可以使用返回值 result
+} catch Error(string memory reason) {
+    // 当 revert(reasonString) 或 require(false, reasonString) 被调用时
+    // 可以访问 reason
+} catch Panic(uint errorCode) {
+    // 当发生 panic 错误时（如除以零、数组越界等）
+    // errorCode 表示错误类型
+} catch (bytes memory lowLevelData) {
+    // 当错误不符合上述任何类型时
+    // 包含低级错误数据
+}
+```
+
+
+##### 错误类型详解
+
+ 1. `Error(string memory reason)`
+
+- 对应 `revert("description")` 或 `require(false, "description")`
+    
+- 可以获取错误描述字符串
+    
+
+2. `Panic(uint errorCode)`
+
+- 对应 Solidity 的 "panic" 错误（类似断言失败）
+    
+- 常见错误码：
+    
+    - 0x01: 断言失败
+        
+    - 0x11: 算术运算溢出
+        
+    - 0x12: 除以零
+        
+    - 0x21: 无效的数组索引
+        
+    - 0x31: 分配过多内存
+        
+    - 0x32: 调用未初始化的内部函数类型变量
+        
+
+3. 默认的 `catch` 块
+
+- 捕获所有其他类型的错误
+    
+- 包含原始错误数据（bytes 类型）
+
+
+### 自定义修饰符
+
+自定义修饰符（Modifier）用于在函数执行前或执行后添加额外的检查或逻辑。它可以复用代码，并且常用于权限控制或状态检查。
+
+### 语法
+```solidity
+modifier 修饰符名 {
+    // 前置逻辑
+    _; // 执行函数体
+    // 后置逻辑
+}
+```
+
+#### 示例
+```solidity
+contract Owner {
+    address public owner;
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    // 自定义修饰符，仅允许合约所有者调用
+    modifier onlyOwner {
+        require(msg.sender == owner, "仅合约所有者可调用");
+        _;
+    }
+
+    function changeOwner(address newOwner) public onlyOwner {
+        owner = newOwner;
+    }
+}
+```
+
+#### 特点
+- 可以复用代码
+- 常用于权限控制
+- 可以在函数执行前后添加逻辑
+
+
+---
+
+#### 综合示例
+
+```solidity
+contract Bank {
+    mapping(address => uint256) public balances;
+
+    // 自定义修饰符，检查余额是否足够
+    modifier hasSufficientBalance(uint256 amount) {
+        require(balances[msg.sender] >= amount, "余额不足");
+        _;
+    }
+
+    // 存款函数
+    function deposit() public payable {
+        require(msg.value > 0, "存款金额必须大于0");
+        balances[msg.sender] += msg.value;
+    }
+
+    // 取款函数
+    function withdraw(uint256 amount) public hasSufficientBalance(amount) {
+        balances[msg.sender] -= amount;
+        payable(msg.sender).transfer(amount);
+        assert(balances[msg.sender] >= 0); // 确保余额不为负
+    }
+}
+```
+
+---
